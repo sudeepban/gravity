@@ -342,13 +342,19 @@ function drawProjectile(p, g, state) {
 
   const a = p.angle * Math.PI/180;
   const vx = p.v0*Math.cos(a), vy = p.v0*Math.sin(a);
-  const tFlight = (vy + Math.sqrt(vy**2+2*g*p.h0))/g;
-  const maxX = vx * tFlight;
-  const maxY = p.h0 + vy**2/(2*g);
+  const tFlight = (vy + Math.sqrt(Math.max(0, vy**2+2*g*p.h0)))/g;
+
+  // Fix the spatial scale to a reference speed so that changing v0 changes
+  // how fast the ball moves, not how large the canvas coordinate system is.
+  const v0ref = 150;
+  const vxRef = v0ref*Math.cos(a), vyRef = v0ref*Math.sin(a);
+  const tFlightRef = (vyRef + Math.sqrt(Math.max(0, vyRef**2+2*g*p.h0)))/g;
+  const maxXRef = vxRef * tFlightRef;
+  const maxYRef = p.h0 + vyRef**2/(2*g);
 
   const padX = 60, padY = 40;
-  const scaleX = (W - 2*padX) / (maxX * 1.05);
-  const scaleY = (H - padY - 40) / (maxY * 1.3 + p.h0 + 5);
+  const scaleX = (W - 2*padX) / (maxXRef * 1.05);
+  const scaleY = (H - padY - 40) / (maxYRef * 1.3 + p.h0 + 5);
   const groundY = H - 40;
 
   // Ground
@@ -357,12 +363,15 @@ function drawProjectile(p, g, state) {
   ctx.strokeStyle = '#2d6b2d'; ctx.lineWidth = 2;
   ctx.beginPath(); ctx.moveTo(0,groundY); ctx.lineTo(W,groundY); ctx.stroke();
 
-  // Trajectory preview
+  // Trajectory preview (clipped to canvas)
+  ctx.save();
+  ctx.beginPath(); ctx.rect(padX, 0, W - padX, groundY); ctx.clip();
   ctx.strokeStyle = 'rgba(100,150,255,0.2)';
   ctx.lineWidth = 1.5;
   ctx.setLineDash([5,5]);
   ctx.beginPath();
-  const steps = 200;
+  const steps = 300;
+  let previewStarted = false;
   for(let i=0; i<=steps; i++) {
     const tt = (tFlight/steps)*i;
     const px = vx*tt;
@@ -370,10 +379,12 @@ function drawProjectile(p, g, state) {
     if(py < 0) break;
     const sx = padX + px*scaleX;
     const sy = groundY - py*scaleY;
-    i===0 ? ctx.moveTo(sx,sy) : ctx.lineTo(sx,sy);
+    if(!previewStarted) { ctx.moveTo(sx,sy); previewStarted=true; }
+    else ctx.lineTo(sx,sy);
   }
   ctx.stroke();
   ctx.setLineDash([]);
+  ctx.restore();
 
   // Trail
   trailPoints.push({ x: state.x, y: state.y });
