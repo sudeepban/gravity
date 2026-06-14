@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
 <title>Gravity Lab — a playground for motion &amp; forces</title>
 <style>
   :root {
@@ -26,7 +26,7 @@
     font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
     overflow: hidden;
   }
-  #app { display: flex; flex-direction: column; height: 100vh; }
+  #app { display: flex; flex-direction: column; height: 100vh; height: 100dvh; }
 
   /* ── Header ─────────────────────────────────────────── */
   header {
@@ -260,11 +260,110 @@
   #help-card .cseq { font-family: Cambria, serif; font-style: italic; font-size: 1.05rem; text-align: center; padding: 10px; background: rgba(5,8,22,.8); border-radius: 10px; margin: 8px 0; }
   #help-card .cseq .p { color: var(--pos); } #help-card .cseq .v { color: var(--vel); } #help-card .cseq .a { color: var(--acc); }
 
+  /* drawer chrome — hidden on desktop */
+  #panel-toggle { display: none; }
+  #panel-close { display: none; }
+  #panel-backdrop { display: none; }
+
   @media (max-width: 900px) {
-    #panel { width: 250px; }
+    #panel { width: 264px; }
     .logo .tagline { display: none; }
-    #graphs-body { height: 140px; }
-    .glink { width: 52px; font-size: .62rem; }
+    #graphs-body { height: 150px; }
+    .glink { width: 56px; font-size: .62rem; }
+  }
+
+  /* ── Mobile / narrow: panel becomes a slide-in drawer ── */
+  @media (max-width: 720px) {
+    header { gap: 8px; padding: 8px 10px; }
+    .logo .title { font-size: 1.02rem; letter-spacing: 1px; }
+    nav.tabs {
+      justify-content: flex-start; flex-wrap: nowrap; gap: 6px;
+      overflow-x: auto; -webkit-overflow-scrolling: touch;
+      scrollbar-width: none; -ms-overflow-style: none;
+      padding-bottom: 1px;
+    }
+    nav.tabs::-webkit-scrollbar { display: none; }
+    .tab { flex-shrink: 0; padding: 7px 12px; font-size: .8rem; }
+    .hbtn { width: 34px; height: 34px; flex-shrink: 0; }
+    #panel-toggle { display: flex; align-items: center; justify-content: center; }
+
+    /* off-canvas drawer */
+    #panel {
+      position: fixed; top: 0; right: 0; height: 100%;
+      width: min(86vw, 330px);
+      z-index: 60; transform: translateX(102%);
+      transition: transform .28s cubic-bezier(.22,.61,.36,1);
+      box-shadow: -10px 0 36px rgba(0,0,0,.55);
+      padding-top: 46px;
+    }
+    #panel.open { transform: none; }
+    #panel-backdrop {
+      display: block; position: fixed; inset: 0; z-index: 55;
+      background: rgba(3,5,14,.55); backdrop-filter: blur(2px);
+      opacity: 0; pointer-events: none; transition: opacity .28s;
+    }
+    #panel-backdrop.show { opacity: 1; pointer-events: auto; }
+    #panel-close {
+      display: none; position: fixed; top: 8px; right: 10px; z-index: 61;
+      width: 34px; height: 34px; border-radius: 50%;
+      border: 1px solid rgba(110,140,255,.4); background: rgba(28,38,84,.92);
+      color: #dde4ff; font-size: 1rem; cursor: pointer;
+    }
+    #panel-close.show { display: block; }
+
+    /* HUD: compact, never covers the whole scene */
+    #hud-stats { top: 8px; left: 8px; min-width: 0; padding: 7px 10px; font-size: .68rem; line-height: 1.5; max-width: 47vw; }
+    #hud-stats .row { gap: 8px; }
+    .ebar-label { font-size: .56rem; }
+
+    /* tip + Newton box would collide with HUD — keep it clean */
+    #tip { display: none; }
+    #law-box { display: none !important; }
+
+    #big-msg { font-size: 1.5rem; }
+
+    /* transport: tighter so it fits a phone */
+    #transport { gap: 7px; padding: 6px 9px; bottom: 10px; }
+    .tbtn { width: 34px; height: 34px; font-size: .85rem; }
+    .tbtn.primary { width: 42px; height: 42px; font-size: 1.05rem; }
+    .tspeed input { width: 70px; }
+    .tspeed label { font-size: .54rem; }
+
+    /* thrust buttons closer together */
+    #thrust-controls { gap: 30px; bottom: 70px; }
+    .thrust-btn { padding: 12px 16px; font-size: .9rem; }
+
+    /* graphs: collapsed by default; scroll horizontally when open */
+    #graphs-header { padding: 7px 12px; gap: 8px; }
+    #graphs-header .ghint { display: none; }
+    #graphs-body {
+      height: 168px; padding: 0 8px 8px; gap: 0;
+      overflow-x: auto; -webkit-overflow-scrolling: touch; scroll-snap-type: x proximity;
+    }
+    #graphs-body::-webkit-scrollbar { height: 5px; }
+    #graphs-body::-webkit-scrollbar-thumb { background: #2a3566; border-radius: 3px; }
+    .gcanvas { min-width: 76vw; scroll-snap-align: center; }
+    .glink { width: 58px; flex-shrink: 0; font-size: .6rem; }
+  }
+
+  @media (max-width: 720px) and (orientation: landscape) {
+    #graphs-body { height: 120px; }
+    .gcanvas { min-width: 46vw; }
+    #hud-stats { font-size: .62rem; max-width: 32vw; }
+  }
+
+  /* Short screens (e.g. landscape phones): compress chrome, give the
+     simulation room. Graphs start collapsed (see boot script). */
+  @media (max-height: 520px) {
+    header { padding: 6px 12px; }
+    .logo .tagline { display: none; }
+    #graphs-body { height: 128px; }
+    #graphs-header { padding: 5px 14px; }
+    #transport { bottom: 8px; padding: 5px 9px; }
+    .tbtn { width: 32px; height: 32px; }
+    .tbtn.primary { width: 40px; height: 40px; }
+    #hud-stats { font-size: .68rem; line-height: 1.45; padding: 7px 10px; }
+    #thrust-controls { bottom: 60px; }
   }
 </style>
 </head>
@@ -276,6 +375,7 @@
       <span class="tagline">A PLAYGROUND FOR MOTION, FORCES &amp; CALCULUS</span>
     </div>
     <nav class="tabs" id="tabs"></nav>
+    <button class="hbtn" id="panel-toggle" title="Controls & parameters">⚙</button>
     <button class="hbtn" id="help-btn" title="Help & physics guide">?</button>
   </header>
 
@@ -307,6 +407,8 @@
       </div>
     </div>
     <aside id="panel"></aside>
+    <button id="panel-close" title="Close controls">✕</button>
+    <div id="panel-backdrop"></div>
   </main>
 
   <section id="graphs">
@@ -1930,6 +2032,18 @@ function refreshSoundBtn() { soundBtn.textContent = soundOn ? '🔊' : '🔇'; s
 soundBtn.onclick = () => { soundOn = !soundOn; localStorage.setItem('gl-sound', soundOn ? '1' : '0'); ensureAudio(); refreshSoundBtn(); if (soundOn) sfx.pop(); };
 refreshSoundBtn();
 
+// mobile controls drawer
+const panelBackdrop = document.getElementById('panel-backdrop');
+const panelClose = document.getElementById('panel-close');
+function setPanelOpen(open) {
+  panelEl.classList.toggle('open', open);
+  panelBackdrop.classList.toggle('show', open);
+  panelClose.classList.toggle('show', open);
+}
+document.getElementById('panel-toggle').onclick = () => setPanelOpen(!panelEl.classList.contains('open'));
+panelClose.onclick = () => setPanelOpen(false);
+panelBackdrop.onclick = () => setPanelOpen(false);
+
 // help modal
 document.getElementById('help-btn').onclick = () => document.getElementById('help-overlay').classList.add('show');
 document.getElementById('help-close').onclick = () => document.getElementById('help-overlay').classList.remove('show');
@@ -2005,6 +2119,7 @@ function onResize() {
   draw();
 }
 window.addEventListener('resize', onResize);
+window.addEventListener('orientationchange', () => setTimeout(onResize, 250));
 
 // one full render (used when paused)
 function draw(timeOverride) {
@@ -2042,6 +2157,11 @@ function frame(ts) {
 }
 
 // ── boot ──────────────────────────────────────────────────────────────
+// On phones, start with the graphs collapsed so the simulation gets the
+// spotlight — they're one tap away via the "Calculus of Motion" header.
+if (window.matchMedia('(max-width: 720px), (max-height: 520px)').matches) {
+  document.getElementById('graphs').classList.add('collapsed');
+}
 onResize();
 switchModule(dropMod);
 requestAnimationFrame(frame);
