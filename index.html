@@ -1503,7 +1503,6 @@ const orbitMod = {
 
   reset() {
     this.bodies = []; this.tracked = null; this.t = 0; this.drag = null;
-    this.presetCircular();
     this.updateEq();
   },
   buildPanel() {
@@ -1512,13 +1511,51 @@ const orbitMod = {
     mkSlider(sp, { label: '🪐 New-planet mass m', min: 1, max: 60, step: 1, value: this.p.spawnM, fmt: v => v + '', oninput: (v) => { this.p.spawnM = v; } });
     mkToggle(sp, '🤝 Planets attract each other', this.p.mutual, (v) => { this.p.mutual = v; });
     mkToggle(sp, '➳ Show velocity vectors', this.p.showV, (v) => { this.p.showV = v; });
+    // tracked-planet controls (shown/hidden dynamically)
+    const st = secEl('🎯 Selected planet');
+    const noSel = document.createElement('div');
+    noSel.style.cssText = 'font-size:.76rem;color:#5d6694;margin-bottom:4px;';
+    noSel.id = 'orbit-no-sel';
+    noSel.textContent = 'Click a preset or drag to spawn a planet, then its controls appear here.';
+    st.appendChild(noSel);
+    const selCtrls = document.createElement('div');
+    selCtrls.id = 'orbit-sel-ctrls';
+    selCtrls.style.display = 'none';
+    this.trackedMassSlider = mkSlider(selCtrls, {
+      label: '⚖️ Planet mass', min: 1, max: 120, step: 1, value: this.p.spawnM,
+      fmt: v => v + '',
+      oninput: (v) => {
+        if (this.tracked) { this.tracked.m = v; this.tracked.r = 3 + Math.cbrt(v) * 2.1; }
+      },
+    });
+    const removeBtn = mkButton(selCtrls, '🗑 Remove this planet', () => {
+      if (!this.tracked) return;
+      this.bodies = this.bodies.filter(b => b !== this.tracked);
+      this.tracked = this.bodies[this.bodies.length - 1] || null;
+      this.refreshTrackedUI();
+      this.updateEq();
+    });
+    st.appendChild(selCtrls);
     const pr = secEl('✨ Presets');
     mkButton(pr, '⭕ Circular orbit', () => { this.bodies = []; this.presetCircular(); setRunning(true); });
     mkButton(pr, '🥚 Eccentric ellipse', () => { this.bodies = []; this.presetEllipse(); setRunning(true); });
     mkButton(pr, '👯 Twin planets', () => { this.bodies = []; this.presetTwins(); setRunning(true); });
     mkButton(pr, '🌌 Chaos! (5 random)', () => { this.bodies = []; this.presetChaos(); setRunning(true); });
-    mkButton(pr, '🧹 Clear all planets', () => { this.bodies = []; this.tracked = null; draw(); });
+    mkButton(pr, '🧹 Clear all planets', () => { this.bodies = []; this.tracked = null; this.refreshTrackedUI(); draw(); });
     mkEqSection();
+  },
+  refreshTrackedUI() {
+    const noSel = document.getElementById('orbit-no-sel');
+    const ctrls = document.getElementById('orbit-sel-ctrls');
+    if (!noSel || !ctrls) return;
+    if (this.tracked) {
+      noSel.style.display = 'none';
+      ctrls.style.display = '';
+      this.trackedMassSlider && this.trackedMassSlider.set(Math.round(this.tracked.m));
+    } else {
+      noSel.style.display = '';
+      ctrls.style.display = 'none';
+    }
   },
   updateEq() {
     const M = this.p.starM;
@@ -1543,6 +1580,7 @@ const orbitMod = {
     this.tracked = b;
     histClear(); this.t = 0;
     this.updateEq();
+    this.refreshTrackedUI();
     return b;
   },
   vCirc(r) { return Math.sqrt(G_ORBIT * this.p.starM / r); },
@@ -1598,12 +1636,12 @@ const orbitMod = {
           burst(SW / 2 + b.x, SH / 2 + b.y, { n: 30, colors: ['#ffd166', '#ff8800', '#fff'], speed: 200, life: 1, grav: 0 });
           sfx.merge(); bigMsg('☀️ Consumed by the star!', '#ff9e00');
           this.bodies.splice(i, 1);
-          if (this.tracked === b) this.tracked = this.bodies[this.bodies.length - 1] || null;
+          if (this.tracked === b) { this.tracked = this.bodies[this.bodies.length - 1] || null; this.refreshTrackedUI(); }
           continue;
         }
         if (rs > 4200) {
           this.bodies.splice(i, 1);
-          if (this.tracked === b) this.tracked = this.bodies[this.bodies.length - 1] || null;
+          if (this.tracked === b) { this.tracked = this.bodies[this.bodies.length - 1] || null; this.refreshTrackedUI(); }
           bigMsg('🚀 Escaped to deep space!', '#4cc9f0');
           continue;
         }
@@ -1788,6 +1826,17 @@ const forceMod = {
   thrustDir: 0,
   law3Flash: 0,
 
+  MATERIALS: [
+    { label: '🧊 Ice / Ice',        mu: 0.03,  note: 'μ = 0.03 — almost frictionless!' },
+    { label: '🛞 Wet road',         mu: 0.10,  note: 'μ = 0.10 — wet tarmac & tyres' },
+    { label: '⛸ Skis / Snow',      mu: 0.05,  note: 'μ = 0.05 — fresh packed snow' },
+    { label: '📦 Wood / Wood',      mu: 0.30,  note: 'μ = 0.30 — dry timber on timber' },
+    { label: '🧱 Rubber / Dry road', mu: 0.70, note: 'μ = 0.70 — car tyre on dry road' },
+    { label: '🔩 Steel / Steel',    mu: 0.15,  note: 'μ = 0.15 — lubricated metal surfaces' },
+    { label: '🪨 Rock / Concrete',  mu: 0.55,  note: 'μ = 0.55 — boots on pavement' },
+    { label: '⚙️ Custom',           mu: null,  note: '' },
+  ],
+
   reset() {
     this.s = { t: 0, x: 30, v: 0, a: 0, fNet: 0, fApp: 0, fFric: 0, static: false };
     histRecord(0, 30, 0, 0);
@@ -1796,9 +1845,61 @@ const forceMod = {
   buildPanel() {
     mkPlanetSection(() => { this.updateEq(); });
     const sp = secEl('🎛 The sled');
-    mkSlider(sp, { label: '⚖️ Mass m', min: 1, max: 50, step: 1, value: this.p.m, fmt: v => v + ' kg', oninput: (v) => { this.p.m = v; this.updateEq(); } });
+    mkSlider(sp, { label: '⚖️ Mass m', min: 1, max: 50, step: 1, value: this.p.m, fmt: v => v + ' kg', oninput: (v) => { this.p.m = v; resetSim(); } });
     mkSlider(sp, { label: '🔥 Thrust force F', min: 10, max: 400, step: 5, value: this.p.thrust, fmt: v => v + ' N', oninput: (v) => { this.p.thrust = v; this.updateEq(); } });
-    mkSlider(sp, { label: '🧊 Friction μ', min: 0, max: 1, step: 0.01, value: this.p.mu, fmt: v => v.toFixed(2), oninput: (v) => { this.p.mu = v; this.updateEq(); } });
+
+    const sm = secEl('🧱 Surface material (friction)');
+    // note box
+    const noteEl = document.createElement('div');
+    noteEl.style.cssText = 'font-size:.72rem;color:#8a93c4;margin-bottom:8px;min-height:1.6em;';
+    // build chips
+    const matChips = document.createElement('div');
+    matChips.className = 'chips';
+    matChips.style.marginBottom = '10px';
+    const self = this;
+    this.muSlider = null;
+    const updateNote = (mat) => { noteEl.textContent = mat.note; };
+    const chipEls = this.MATERIALS.map((mat, i) => {
+      const btn = document.createElement('button');
+      btn.className = 'chip' + (i === 0 ? ' active' : '');
+      btn.textContent = mat.label;
+      btn.onclick = () => {
+        matChips.querySelectorAll('.chip').forEach(c => c.classList.remove('active'));
+        btn.classList.add('active');
+        updateNote(mat);
+        if (mat.mu !== null) {
+          self.p.mu = mat.mu;
+          self.muSlider && self.muSlider.set(mat.mu);
+          self.updateEq();
+        }
+      };
+      matChips.appendChild(btn);
+      return btn;
+    });
+    sm.appendChild(matChips);
+    sm.appendChild(noteEl);
+
+    // fine-tune slider — always visible
+    const muDiv = document.createElement('div');
+    muDiv.className = 'ctl';
+    muDiv.innerHTML = '<label>Fine-tune μ <span class="val"></span></label><input type="range" min="0" max="1" step="0.01">';
+    const muInp = muDiv.querySelector('input');
+    const muVal = muDiv.querySelector('.val');
+    muInp.value = this.p.mu;
+    muVal.textContent = this.p.mu.toFixed(2);
+    muInp.addEventListener('input', () => {
+      const v = +muInp.value;
+      muVal.textContent = v.toFixed(2);
+      self.p.mu = v;
+      // mark Custom chip active when slider moved freely
+      matChips.querySelectorAll('.chip').forEach((c, i) => c.classList.toggle('active', i === self.MATERIALS.length - 1));
+      updateNote(self.MATERIALS[self.MATERIALS.length - 1]);
+      self.updateEq();
+    });
+    this.muSlider = { set: (v) => { muInp.value = v; muVal.textContent = (+v).toFixed(2); } };
+    sm.appendChild(muDiv);
+    updateNote(this.MATERIALS[0]); // initial note for ice
+
     mkEqSection();
   },
   updateEq() {
