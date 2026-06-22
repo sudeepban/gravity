@@ -950,10 +950,33 @@ const dropMod = {
   id: 'drop', label: '🪂 Drop Lab',
   tip: '👆 Drag the object up & down — flick to throw! Then watch the graphs below.',
   graphCfg: { names: ['Position', 'Velocity', 'Acceleration'], shorts: ['y', 'v', 'a'], units: ['m', 'm/s', 'm/s²'] },
-  p: { h0: 80, objKey: 'soccer', air: false, race: false },
+  p: { h0: 80, objKey: 'soccer', air: false, race: false, customMass: 0.43 },
   s: {},
   ui: {},
   maxSeen: 0,
+
+  // Active mass: always customMass (set from presets or slider)
+  activeM() { return this.p.customMass; },
+
+  // Log-scale slider helpers spanning 0.001 kg → 200,000 kg
+  MASS_PRESETS: [
+    { label: '🏓 Ping pong',   m: 0.0027,  note: 'Table tennis ball — 2.7 g' },
+    { label: '🪶 Feather',     m: 0.003,   note: 'Bird feather — ~3 g' },
+    { label: '🎾 Tennis ball', m: 0.057,   note: 'Tennis ball — 57 g' },
+    { label: '⚽ Soccer ball', m: 0.43,    note: 'Soccer ball — 430 g' },
+    { label: '🎳 Bowling ball',m: 7.26,    note: 'Bowling ball — 7.26 kg' },
+    { label: '👤 Person',      m: 70,      note: 'Average adult — 70 kg' },
+    { label: '🚗 Car',         m: 1500,    note: 'Family sedan — 1,500 kg' },
+    { label: '🐋 Blue whale',  m: 150000,  note: 'Blue whale — 150,000 kg' },
+    { label: '⚙️ Custom',      m: null,    note: 'Use the slider below' },
+  ],
+  _sliderToMass(v) { return Math.pow(10, v / 100 * 8 - 3); },   // 0→0.001 kg, 100→100000 kg
+  _massToSlider(m) { return clamp((Math.log10(m) + 3) / 8 * 100, 0, 100); },
+  _fmtMass(m) {
+    if (m < 0.1)  return (m * 1000).toFixed(1) + ' g';
+    if (m < 1000) return m.toFixed(m < 10 ? 2 : 0) + ' kg';
+    return (m / 1000).toFixed(1) + ' t';
+  },
 
   reset() {
     const o = DROP_OBJECTS[this.p.objKey];
@@ -969,10 +992,69 @@ const dropMod = {
 
   buildPanel() {
     mkPlanetSection(() => { resetSim(); });
-    const so = secEl('🎁 Pick an object');
+
+    // ── Object picker (shape / drag / visual) ────────────────────────
+    const so = secEl('🎁 Pick an object (shape + drag)');
     this.ui.objChips = mkChips(so, Object.entries(DROP_OBJECTS).map(([k, o]) => ({ key: k, label: `${o.emoji} ${o.name}` })), this.p.objKey, (k) => {
       this.p.objKey = k; resetSim();
     });
+
+    // ── Weight section ────────────────────────────────────────────────
+    const sm = secEl('⚖️ Weight (mass)');
+    const noteEl = document.createElement('div');
+    noteEl.style.cssText = 'font-size:.72rem;color:#8a93c4;margin:0 0 8px;min-height:1.6em;';
+    const massChips = document.createElement('div');
+    massChips.className = 'chips';
+    massChips.style.marginBottom = '10px';
+    const self = this;
+
+    // fine-tune slider (log scale)
+    const muDiv = document.createElement('div');
+    muDiv.className = 'ctl';
+    muDiv.innerHTML = '<label>Fine-tune mass <span class="val"></span></label><input type="range" min="0" max="100" step="0.5">';
+    const muInp = muDiv.querySelector('input');
+    const muVal = muDiv.querySelector('.val');
+    const syncSlider = (m) => {
+      muInp.value = self._massToSlider(m);
+      muVal.textContent = self._fmtMass(m);
+    };
+    syncSlider(this.p.customMass);
+    muInp.addEventListener('input', () => {
+      const m = self._sliderToMass(+muInp.value);
+      muVal.textContent = self._fmtMass(m);
+      self.p.customMass = m;
+      // mark Custom active
+      massChips.querySelectorAll('.chip').forEach((c, i) => c.classList.toggle('active', i === self.MASS_PRESETS.length - 1));
+      noteEl.textContent = 'Custom mass — ' + self._fmtMass(m);
+      self.updateEq();
+    });
+
+    // build chips
+    const startPreset = this.MASS_PRESETS.findIndex(p => p.m !== null && Math.abs(p.m - this.p.customMass) < 1e-6);
+    this.MASS_PRESETS.forEach((preset, i) => {
+      const btn = document.createElement('button');
+      btn.className = 'chip' + (i === (startPreset >= 0 ? startPreset : this.MASS_PRESETS.length - 1) ? ' active' : '');
+      btn.textContent = preset.label;
+      btn.onclick = () => {
+        massChips.querySelectorAll('.chip').forEach(c => c.classList.remove('active'));
+        btn.classList.add('active');
+        noteEl.textContent = preset.note;
+        if (preset.m !== null) {
+          self.p.customMass = preset.m;
+          syncSlider(preset.m);
+          self.updateEq();
+        }
+      };
+      massChips.appendChild(btn);
+    });
+
+    sm.appendChild(massChips);
+    sm.appendChild(noteEl);
+    sm.appendChild(muDiv);
+    // set initial note
+    noteEl.textContent = startPreset >= 0 ? this.MASS_PRESETS[startPreset].note : 'Custom mass — ' + this._fmtMass(this.p.customMass);
+
+    // ── Other parameters ──────────────────────────────────────────────
     const sp = secEl('🎛 Parameters');
     this.ui.h0 = mkSlider(sp, {
       label: 'Drop height h₀', min: 2, max: 400, step: 1, value: this.p.h0, fmt: v => v + ' m',
@@ -984,10 +1066,10 @@ const dropMod = {
   },
 
   updateEq() {
-    const g = planet().g, o = DROP_OBJECTS[this.p.objKey];
+    const g = planet().g, o = DROP_OBJECTS[this.p.objKey], m = this.activeM();
     let airNote = '';
     if (this.p.air) {
-      const vt = Math.sqrt(o.m * g / o.k);
+      const vt = Math.sqrt(m * g / o.k);
       airNote = `<span class="eq">v<sub>terminal</sub> = √(mg/k) = <span class="num">${fmt(vt, 1)} m/s</span></span><br>
         <span class="note">Drag force grows with v² until it balances gravity — then velocity stops changing.</span>`;
     } else {
@@ -997,17 +1079,17 @@ const dropMod = {
       <span class="eq">y(t) = h₀ + v₀t − ½gt²</span><br>
       <span class="eq">v(t) = dy/dt = v₀ − gt</span><br>
       <span class="eq">a(t) = dv/dt = −g = <span class="num">−${fmt(g, 2)} m/s²</span></span><br>
-      <span class="eq">PE = mgh &nbsp; KE = ½mv²</span><br>
+      <span class="eq">m = <span class="num">${this._fmtMass(m)}</span> &nbsp; PE = mgh &nbsp; KE = ½mv²</span><br>
       ${airNote}`);
   },
 
   step(dt) {
-    const g = planet().g, s = this.s, o = DROP_OBJECTS[this.p.objKey];
+    const g = planet().g, s = this.s, o = DROP_OBJECTS[this.p.objKey], m = this.activeM();
     if (s.grabbed) { s.t += dt; return; }
-    const integ = (y, v, k, m, rest, splat, settledKey, squashKey) => {
+    const integ = (y, v, k, mass, rest, splat, settledKey, squashKey) => {
       if (s[settledKey]) return [y, v];
       let a = -g;
-      if (this.p.air) a -= (k / m) * v * Math.abs(v);
+      if (this.p.air) a -= (k / mass) * v * Math.abs(v);
       v += a * dt;
       y += v * dt;
       if (y <= 0 && v < 0) {
@@ -1029,8 +1111,8 @@ const dropMod = {
       }
       return [y, v];
     };
-    [s.y, s.v] = integ(s.y, s.v, o.k, o.m, o.rest, o.splat, 'settled', 'squash');
-    s.a = s.settled ? 0 : -g - (this.p.air ? (o.k / o.m) * s.v * Math.abs(s.v) : 0);
+    [s.y, s.v] = integ(s.y, s.v, o.k, m, o.rest, o.splat, 'settled', 'squash');
+    s.a = s.settled ? 0 : -g - (this.p.air ? (o.k / m) * s.v * Math.abs(s.v) : 0);
     if (this.p.race && !s.settled2) {
       const f = DROP_OBJECTS.feather;
       [s.y2, s.v2] = integ(s.y2, s.v2, f.k, f.m, f.rest, false, 'settled2', 'squash2');
@@ -1046,7 +1128,7 @@ const dropMod = {
     if (s.settled && (!this.p.race || s.settled2)) {
       if (this.p.race && !s.doneMsg) {
         s.doneMsg = true;
-        if (this.p.air) bigMsg(`${o.emoji} wins! Air slows the feather`, '#ffd166');
+        if (this.p.air) bigMsg(`${o.emoji} (${this._fmtMass(m)}) wins! Heavier = less drag`, '#ffd166');
         else bigMsg('🤝 A tie! Galileo was right', '#06d6a0');
       }
       return 'pause';
@@ -1125,9 +1207,9 @@ const dropMod = {
     }
 
     // HUD
-    const g = planet().g;
-    const ke = 0.5 * o.m * s.v * s.v, pe = o.m * g * Math.max(0, s.y);
-    const e0 = o.m * g * this.p.h0 || 1;
+    const g = planet().g, m = this.activeM();
+    const ke = 0.5 * m * s.v * s.v, pe = m * g * Math.max(0, s.y);
+    const e0 = m * g * this.p.h0 || 1;
     const peW = clamp(pe / e0 * 100, 0, 100), keW = clamp(ke / e0 * 100, 0, 100 - peW);
     setHUD([
       ['height y', fmt(s.y) + ' m', 'c-pos'],
