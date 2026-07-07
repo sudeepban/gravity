@@ -1583,14 +1583,42 @@ const orbitMod = {
   drag: null, preview: null,
   ui: {},
 
+  // Log-scale helpers for star (50–50000) and planet (0.5–500)
+  _starSToM(s)  { return Math.round(Math.pow(10, s / 100 * 3 + 1.699)); },   // s=0→50, s=100→50000
+  _starMToS(m)  { return clamp((Math.log10(Math.max(50, m)) - 1.699) / 3 * 100, 0, 100); },
+  _planSToM(s)  { return +Math.pow(10, s / 100 * 3 - 0.301).toFixed(2); },   // s=0→0.5, s=100→500
+  _planMToS(m)  { return clamp((Math.log10(Math.max(0.5, m)) + 0.301) / 3 * 100, 0, 100); },
+  _fmtOM(v)     { return v >= 10000 ? (v/1000).toFixed(0)+'k' : v >= 100 ? Math.round(v)+'' : v >= 10 ? v.toFixed(1) : v.toFixed(2); },
+
+  // Build a log-scale slider inline (returns {set(v)} handle)
+  _mkLogSlider(parent, { label, toM, toS, value, onchange }) {
+    const d = document.createElement('div');
+    d.className = 'ctl';
+    d.innerHTML = `<label>${label} <span class="val"></span></label><input type="range" min="0" max="100" step="0.5">`;
+    const inp = d.querySelector('input'), valEl = d.querySelector('.val');
+    const sync = (m) => { inp.value = toS(m); valEl.textContent = this._fmtOM(m); };
+    sync(value);
+    inp.addEventListener('input', () => { const m = toM(+inp.value); valEl.textContent = this._fmtOM(m); onchange(m); });
+    parent.appendChild(d);
+    return { set: (m) => sync(m) };
+  },
+
   reset() {
     this.bodies = []; this.tracked = null; this.t = 0; this.drag = null;
     this.updateEq();
   },
   buildPanel() {
     const sp = secEl('🎛 Star & spawning');
-    mkSlider(sp, { label: '☀️ Star mass M', min: 400, max: 4000, step: 50, value: this.p.starM, fmt: v => v + '', oninput: (v) => { this.p.starM = v; this.updateEq(); } });
-    mkSlider(sp, { label: '🪐 New-planet mass m', min: 1, max: 60, step: 1, value: this.p.spawnM, fmt: v => v + '', oninput: (v) => { this.p.spawnM = v; } });
+    this._mkLogSlider(sp, {
+      label: '☀️ Star mass M', toM: s => this._starSToM(s), toS: m => this._starMToS(m),
+      value: this.p.starM,
+      onchange: (v) => { this.p.starM = v; this.starSizeChanged(); this.updateEq(); },
+    });
+    this._mkLogSlider(sp, {
+      label: '🪐 New-planet mass m', toM: s => this._planSToM(s), toS: m => this._planMToS(m),
+      value: this.p.spawnM,
+      onchange: (v) => { this.p.spawnM = v; },
+    });
     mkToggle(sp, '🤝 Planets attract each other', this.p.mutual, (v) => { this.p.mutual = v; });
     mkToggle(sp, '➳ Show velocity vectors', this.p.showV, (v) => { this.p.showV = v; });
     // tracked-planet controls (shown/hidden dynamically)
@@ -1603,10 +1631,10 @@ const orbitMod = {
     const selCtrls = document.createElement('div');
     selCtrls.id = 'orbit-sel-ctrls';
     selCtrls.style.display = 'none';
-    this.trackedMassSlider = mkSlider(selCtrls, {
-      label: '⚖️ Planet mass', min: 1, max: 120, step: 1, value: this.p.spawnM,
-      fmt: v => v + '',
-      oninput: (v) => {
+    this.trackedMassSlider = this._mkLogSlider(selCtrls, {
+      label: '⚖️ Planet mass', toM: s => this._planSToM(s), toS: m => this._planMToS(m),
+      value: this.p.spawnM,
+      onchange: (v) => {
         if (this.tracked) { this.tracked.m = v; this.tracked.r = 3 + Math.cbrt(v) * 2.1; }
       },
     });
@@ -1633,12 +1661,14 @@ const orbitMod = {
     if (this.tracked) {
       noSel.style.display = 'none';
       ctrls.style.display = '';
-      this.trackedMassSlider && this.trackedMassSlider.set(Math.round(this.tracked.m));
+      this.trackedMassSlider && this.trackedMassSlider.set(this.tracked.m);
     } else {
       noSel.style.display = '';
       ctrls.style.display = 'none';
     }
   },
+  starSizeChanged() { if (!running) draw(); },
+
   updateEq() {
     const M = this.p.starM;
     const r = this.tracked ? Math.hypot(this.tracked.x, this.tracked.y) : 220;
@@ -1757,7 +1787,7 @@ const orbitMod = {
     }
   },
 
-  starR() { return 14 + Math.sqrt(this.p.starM) * 0.28; },
+  starR() { return clamp(14 + Math.sqrt(this.p.starM) * 0.18, 14, 90); },
 
   draw(time) {
     const cx = SW / 2, cy = SH / 2;
